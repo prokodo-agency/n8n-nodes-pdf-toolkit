@@ -18,6 +18,7 @@
     "pdf",
     "pdf-to-image",
     "ocr",
+    "tesseract",
     "prokodo"
   ],
   "repository": {
