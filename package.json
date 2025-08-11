@@ -1,0 +1,51 @@
+{
+  "name": "@prokodo/n8n-nodes-pdf-toolkit",
+  "version": "0.1.0",
+  "description": "PDF toolkit for n8n (merge, split, images, OCR)",
+  "author": "prokodo <info@prokodo.com>",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "n8n",
+    "n8n-nodes",
+    "n8n-community-node",
+    "pdf",
+    "pdf-to-image",
+    "ocr",
+    "prokodo"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/prokodo-agency/n8n-nodes-pdf-toolkit.git"
+  },
+  "homepage": "https://www.prokodo.com",
+  "bugs": {
+    "url": "https://github.com/prokodo-agency/n8n-nodes-pdf-toolkit/issues"
+  },
+  "n8n": {
+    "nodes": ["dist/nodes/PdfTools/PdfTools.node.js"]
+  },
+  "dependencies": {
+    "canvas": "^2.11.2",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "3.11.174",
+    "tesseract.js": "^5.1.0"
+  },
+  "peerDependencies": {
+    "n8n-core": ">=1.88.0 <2",
+    "n8n-workflow": ">=1.88.0 <2"
+  },
+  "scripts": {
+    "build": "tsc && mkdir -p dist/nodes/PdfTools && cp -f src/nodes/PdfTools/*.{svg,png} dist/nodes/PdfTools/ 2>/dev/null || true",
+    "prepublishOnly": "npm run build"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
