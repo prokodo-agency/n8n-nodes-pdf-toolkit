@@ -3,7 +3,7 @@
     <img src="https://cdn.prokodo.com/prokodo_logo_1a3bb7867c/prokodo_logo_1a3bb7867c.webp" alt="prokodo – UI component library for React" height="58" />
   </a>
 </p>
-<h1 align="center">prokodo n8n PDF-Toolkit</h1>
+<h1 align="center">n8n PDF-Toolkit</h1>
 <h2 align="center">Empowering Digital Innovation</h2>
 
 **Merge, split, render and OCR PDFs directly in your n8n workflows — developed by [prokodo](https://www.prokodo.com).**
@@ -15,13 +15,13 @@
 
 ## ✨ Features
 
-- ✨ **Merge** multiple PDFs into one
-- ✨ **Split a PDF into pages or custom ranges**
-- ✨ **PDF → Images (PNG/JPEG) at a chosen DPI**
-- ✨ **OCR (Tesseract.js) on PDFs or images**
-- 📦 **Auto-detects PDF vs image input**
-- 📦 **Per-page or combined text output**
-- 📦 **Optional TXT attachment**
+- 🧩 **Merge** multiple PDFs into one
+- ✂️ **Split a PDF into pages or custom ranges**
+- 🖼️ **PDF → Images (PNG/JPEG) at a chosen DPI**
+- 🔎 **OCR (Tesseract.js) on PDFs or images**
+- 🤖 **Auto-detects PDF vs image input**
+- 📑 **Per-page or combined text output**
+- 📎 **Optional TXT attachment**
 
 ## ✅ Requirements
 - Node.js 18+ / 20 LTS
