@@ -40,7 +40,7 @@ Using an older n8n (e.g. 1.88)? It may still work if you align n8n-core / n8n-wo
 export N8N_CUSTOM_EXTENSIONS=~/.n8n
 
 # install the node into that folder
-npm install --prefix "$N8N_CUSTOM_EXTENSIONS" n8n-nodes-pdf-tools@latest
+npm install --prefix "$N8N_CUSTOM_EXTENSIONS" @prokodo/n8n-nodes-pdf-toolkit@latest
 
 # start n8n
 n8n start
@@ -55,7 +55,7 @@ ENV N8N_CUSTOM_EXTENSIONS=/home/node/.n8n
 ENV NODE_PATH=/home/node/.n8n/node_modules
 
 USER node
-RUN npm install --prefix /home/node/.n8n n8n-nodes-pdf-tools@latest
+RUN npm install --prefix /home/node/.n8n @prokodo/n8n-nodes-pdf-toolkit@latest
 ```
 
 After starting n8n, search in the node picker for **“prokodo (PDF Toolkit)”**
@@ -72,7 +72,7 @@ npm run build
 npm link
 
 # link into your n8n custom extensions folder
-npm link n8n-nodes-pdf-tools --prefix ~/.n8n
+npm link @prokodo/n8n-nodes-pdf-toolkit --prefix ~/.n8n
 
 # start n8n with your custom folder
 export N8N_CUSTOM_EXTENSIONS=~/.n8n
