@@ -1,6 +1,6 @@
 {
   "name": "@prokodo/n8n-nodes-pdf-toolkit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "PDF toolkit for n8n (merge, split, images, OCR)",
   "author": "prokodo <info@prokodo.com>",
   "license": "MIT",
@@ -31,7 +31,9 @@
     "url": "https://github.com/prokodo-agency/n8n-nodes-pdf-toolkit/issues"
   },
   "n8n": {
-    "nodes": ["dist/nodes/PdfTools/PdfTools.node.js"]
+    "nodes": [
+      "dist/nodes/PdfTools/PdfTools.node.js"
+    ]
   },
   "dependencies": {
     "canvas": "^2.11.2",
