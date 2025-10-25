@@ -11,18 +11,32 @@ import { PDFDocument } from 'pdf-lib';
 // If TS complains about types, see the d.ts shim below
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js';
 
-// Worker (not strictly used server-side, but set to quiet warnings)
-import 'pdfjs-dist/legacy/build/pdf.worker.js';
+// In Node we don't need a separate worker file; turn it off
+(pdfjsLib as any).GlobalWorkerOptions.workerSrc = undefined;
 
 import { NODE_DESCRIPTION } from "./PdfTools.const"
-
-// node-canvas for rendering in Node
-import { createCanvas } from 'canvas';
 
 // OCR
 import Tesseract from 'tesseract.js';
 
 type Range = [number, number]; // inclusive 1-based pages
+
+// Lazy loader so we don't crash at require-time on ABI changes
+function loadCanvasOrThrow() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { createCanvas } = require('canvas');
+    return createCanvas as (w: number, h: number) => any;
+  } catch (err: any) {
+    const message =
+      'The native module "canvas" is not available for the current Node runtime. ' +
+      'Rebuild your community packages with the running n8n image (or bake into the image).';
+    // We throw a plain Error here; wrap as NodeOperationError where we call it
+    const e = new Error(message);
+    (e as any).cause = err;
+    throw e;
+  }
+}
 
 function parseRanges(spec: string, pageCount: number): Range[] {
   // e.g. "1,3-5,7,10-"
@@ -49,8 +63,9 @@ function parseRanges(spec: string, pageCount: number): Range[] {
 }
 
 class NodeCanvasFactory {
+  private createCanvas = loadCanvasOrThrow();
   create(width: number, height: number) {
-    const canvas = createCanvas(Math.max(1, Math.floor(width)), Math.max(1, Math.floor(height)));
+    const canvas = this.createCanvas(Math.max(1, Math.floor(width)), Math.max(1, Math.floor(height)));
     const context = canvas.getContext('2d');
     return { canvas, context };
   }
@@ -67,7 +82,7 @@ class NodeCanvasFactory {
 async function renderPdfToImages(
   pdfBytes: Uint8Array,
   opts: { dpi: number; format: 'png' | 'jpeg'; quality?: number; ranges?: Range[] },
-): Promise<{ buffer: Buffer; fileName: string; page: number }[]> {
+ ): Promise<{ buffer: Buffer; fileName: string; page: number }[]> {
   const loadingTask = pdfjsLib.getDocument({ data: pdfBytes });
   const doc = await loadingTask.promise;
   const pageCount = doc.numPages;
@@ -142,12 +157,13 @@ export class PdfTools implements INodeType {
       let added = false;
 
       for (let i = 0; i < items.length; i++) {
-        const bin = items[i].binary?.[propIn];
-        if (!bin?.data) {
+        try {
+          await this.helpers.assertBinaryData(i, propIn); // nice error if missing
+        } catch (e) {
           if (this.continueOnFail()) continue;
-          throw new NodeOperationError(this.getNode(), `Item ${i} missing binary "${propIn}"`);
+          throw e;
         }
-        const bytes = Buffer.from(bin.data, 'base64');
+        const bytes = await this.helpers.getBinaryDataBuffer(i, propIn);
         const src = await PDFDocument.load(bytes);
         const pages = await merged.copyPages(src, src.getPageIndices());
         for (const p of pages) merged.addPage(p);
@@ -160,16 +176,12 @@ export class PdfTools implements INodeType {
       }
 
       const mergedBytes = await merged.save();
-      const out: INodeExecutionData = {
-        json: {},
-        binary: {
-          [outputBinaryProperty]: {
-            data: Buffer.from(mergedBytes).toString('base64'),
-            mimeType: 'application/pdf',
-            fileName: outputFileName,
-          },
-        },
-      };
+      const binary = await this.helpers.prepareBinaryData(
+        Buffer.from(mergedBytes),
+        outputFileName,
+        'application/pdf',
+      );
+      const out: INodeExecutionData = { json: {}, binary: { [outputBinaryProperty]: binary } };
       return this.prepareOutputData([out]);
     }
 
@@ -181,9 +193,7 @@ export class PdfTools implements INodeType {
       const rangesSpec = this.getNodeParameter('ranges', 0, '1-') as string;
       const outProp = this.getNodeParameter('splitOutputProperty', 0) as string;
 
-      const bin = items[0].binary?.[propIn];
-      if (!bin?.data) throw new NodeOperationError(this.getNode(), `Missing binary "${propIn}"`);
-      const bytes = Buffer.from(bin.data, 'base64');
+      const bytes = await this.helpers.getBinaryDataBuffer(0, propIn);
 
       const src = await PDFDocument.load(bytes);
       const pageCount = src.getPageCount();
@@ -201,16 +211,12 @@ export class PdfTools implements INodeType {
         const pages = await doc.copyPages(src, pageIndices);
         pages.forEach((p) => doc.addPage(p));
         const outBytes = await doc.save();
-        outputs.push({
-          json: { pages: [a, b] },
-          binary: {
-            [outProp]: {
-              data: Buffer.from(outBytes).toString('base64'),
-              mimeType: 'application/pdf',
-              fileName: `split-${partIdx}.pdf`,
-            },
-          },
-        });
+        const pdfBinary = await this.helpers.prepareBinaryData(
+          Buffer.from(outBytes),
+          `split-${partIdx}.pdf`,
+          'application/pdf',
+        );
+        outputs.push({ json: { pages: [a, b] }, binary: { [outProp]: pdfBinary } });
         partIdx++;
       }
       return this.prepareOutputData(outputs);
@@ -229,13 +235,21 @@ export class PdfTools implements INodeType {
       const jpegQuality =
         format === 'jpeg' ? (this.getNodeParameter('jpegQuality', 0) as number) : 0.9;
 
-      const bin = items[0].binary?.[propIn];
-      if (!bin?.data) throw new NodeOperationError(this.getNode(), `Missing binary "${propIn}"`);
-      const bytes = Buffer.from(bin.data, 'base64');
+      const bytes = await this.helpers.getBinaryDataBuffer(0, propIn);
 
       const srcDoc = await PDFDocument.load(bytes);
       const pageCount = srcDoc.getPageCount();
       const ranges = parseRanges(pageRanges, pageCount);
+
+      // Probe canvas early to give a friendly error if not installed
+      try {
+        loadCanvasOrThrow();
+      } catch (err: any) {
+        throw new NodeOperationError(this.getNode(), `${err.message}
+        Hints:
+        • Rebuild community packages with the running n8n image
+        • Or bake "canvas" into a custom image built FROM the same n8n version.`);
+      }
 
       const images = await renderPdfToImages(new Uint8Array(bytes), {
         dpi,
@@ -244,15 +258,13 @@ export class PdfTools implements INodeType {
         ranges,
       });
 
-      const outItems: INodeExecutionData[] = images.map((img) => ({
-        json: { page: img.page },
-        binary: {
-          image: {
-            data: img.buffer.toString('base64'),
-            mimeType: format === 'png' ? 'image/png' : 'image/jpeg',
-            fileName: img.fileName,
-          },
-        },
+      const outItems: INodeExecutionData[] = await Promise.all(images.map(async (img) => {
+        const b = await this.helpers.prepareBinaryData(
+          img.buffer,
+          img.fileName,
+          format === 'png' ? 'image/png' : 'image/jpeg',
+        );
+        return { json: { page: img.page }, binary: { image: b } };
       }));
 
       return this.prepareOutputData(outItems);
@@ -270,14 +282,12 @@ export class PdfTools implements INodeType {
     // Advanced toggle
     const advanced = this.getNodeParameter('advancedOcr', 0) as boolean;
 
-    const bin = items[0].binary?.[propIn];
-    if (!bin?.data) throw new NodeOperationError(this.getNode(), `Missing binary "${propIn}"`);
-    const bytes = Buffer.from(bin.data, 'base64');
+    const bytes = await this.helpers.getBinaryDataBuffer(0, propIn);
 
     // Detect PDF vs image
     const isPdf =
-      (bin.mimeType && bin.mimeType.includes('pdf')) ||
-      bytes.slice(0, 5).toString('utf8') === '%PDF-';
+      this.getInputData(0)[0]?.binary?.[propIn]?.mimeType?.includes('pdf') ||
+      bytes.subarray(0, 5).toString('utf8') === '%PDF-';
 
     // Defaults for rasterization
     let pageRanges = '1-';
@@ -300,6 +310,15 @@ export class PdfTools implements INodeType {
     let images: { buffer: Buffer; page: number }[] = [];
 
     if (isPdf) {
+      // Probe canvas early to give a friendly error if not installed
+      try {
+        loadCanvasOrThrow();
+      } catch (err: any) {
+        throw new NodeOperationError(this.getNode(), `${err.message}
+        Hints:
+        • Rebuild community packages with the running n8n image
+        • Or bake "canvas" into a custom image built FROM the same n8n version.`);
+      }
       const srcDoc = await PDFDocument.load(bytes);
       const pageCount = srcDoc.getPageCount();
       const ranges = parseRanges(pageRanges, pageCount);
@@ -312,44 +331,43 @@ export class PdfTools implements INodeType {
       images = rendered.map((r) => ({ buffer: r.buffer, page: r.page }));
     } else {
       // Treat as image input
-      images = [{ buffer: Buffer.from(bytes), page: 1 }];
+      images = [{ buffer: bytes, page: 1 }];
     }
 
     const texts = await ocrBuffers(images, lang, langPath);
 
     if (ocrReturn === 'perPage') {
-      const outs = texts.map((t) => {
+       const outs = texts.map((t) => {
         const out: INodeExecutionData = { json: { page: t.page, text: t.text } };
-        if (attachTxt) {
-          out.binary = {
-            text: {
-              data: Buffer.from(t.text, 'utf-8').toString('base64'),
-              mimeType: 'text/plain',
-              fileName: `page-${t.page}.txt`,
-            },
+         if (attachTxt) {
+          // attach as proper binary using helper
+          // (async map → we'll resolve below for simplicity)
+         }
+         return out;
+       });
+      // If attachments requested, prepare binaries
+      if (attachTxt) {
+        for (const o of outs) {
+          const t = (o.json as any).text as string;
+          o.binary = {
+            text: await this.helpers.prepareBinaryData(Buffer.from(t, 'utf-8'), `page-${(o.json as any).page}.txt`, 'text/plain'),
           };
         }
-        return out;
-      });
-      return this.prepareOutputData(outs);
-    } else {
-      const combined = texts
-        .sort((a, b) => a.page - b.page)
-        .map((t) => `--- Page ${t.page} ---\n${t.text}`)
-        .join('\n\n');
-
-      const out: INodeExecutionData = { json: { text: combined } };
-      if (attachTxt) {
-        out.binary = {
-          text: {
-            data: Buffer.from(combined, 'utf-8').toString('base64'),
-            mimeType: 'text/plain',
-            fileName: 'ocr.txt',
-          },
-        };
       }
-      return this.prepareOutputData([out]);
-    }
+      return this.prepareOutputData(outs);
+     } else {
+       const combined = texts
+         .sort((a, b) => a.page - b.page)
+         .map((t) => `--- Page ${t.page} ---\n${t.text}`)
+         .join('\n\n');
+      const out: INodeExecutionData = { json: { text: combined } };
+       if (attachTxt) {
+        out.binary = {
+          text: await this.helpers.prepareBinaryData(Buffer.from(combined, 'utf-8'), 'ocr.txt', 'text/plain'),
+        };
+       }
+       return this.prepareOutputData([out]);
+     }
   }
 
     throw new NodeOperationError(this.getNode(), `Unknown operation "${op}"`);
